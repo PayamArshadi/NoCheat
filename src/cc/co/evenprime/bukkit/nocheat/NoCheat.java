@@ -1,29 +1,38 @@
 package cc.co.evenprime.bukkit.nocheat;
 
-import java.util.Collections;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.permissions.Permission;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import cc.co.evenprime.bukkit.nocheat.actions.ActionManager;
+import cc.co.evenprime.bukkit.nocheat.command.CommandHandler;
 import cc.co.evenprime.bukkit.nocheat.config.ConfigurationManager;
-import cc.co.evenprime.bukkit.nocheat.config.Permissions;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionList;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
 import cc.co.evenprime.bukkit.nocheat.data.DataManager;
+import cc.co.evenprime.bukkit.nocheat.data.ExecutionHistory;
+import cc.co.evenprime.bukkit.nocheat.debug.ActiveCheckPrinter;
+import cc.co.evenprime.bukkit.nocheat.debug.LagMeasureTask;
+import cc.co.evenprime.bukkit.nocheat.debug.Performance;
+import cc.co.evenprime.bukkit.nocheat.debug.PerformanceManager;
+import cc.co.evenprime.bukkit.nocheat.debug.PerformanceManager.Type;
 
 import cc.co.evenprime.bukkit.nocheat.events.BlockPlaceEventManager;
 import cc.co.evenprime.bukkit.nocheat.events.BlockBreakEventManager;
+import cc.co.evenprime.bukkit.nocheat.events.EntityDamageEventManager;
 import cc.co.evenprime.bukkit.nocheat.events.EventManager;
 import cc.co.evenprime.bukkit.nocheat.events.PlayerChatEventManager;
 import cc.co.evenprime.bukkit.nocheat.events.PlayerMoveEventManager;
 import cc.co.evenprime.bukkit.nocheat.events.PlayerTeleportEventManager;
+import cc.co.evenprime.bukkit.nocheat.events.SwingEventManager;
+import cc.co.evenprime.bukkit.nocheat.events.TimedEventManager;
 import cc.co.evenprime.bukkit.nocheat.log.LogLevel;
 import cc.co.evenprime.bukkit.nocheat.log.LogManager;
 
@@ -33,23 +42,20 @@ import cc.co.evenprime.bukkit.nocheat.log.LogManager;
  * 
  * Check various player events for their plausibility and log/deny them/react to
  * them based on configuration
- * 
- * @author Evenprime
  */
 public class NoCheat extends JavaPlugin {
 
     private ConfigurationManager conf;
     private LogManager           log;
     private DataManager          data;
+    private PerformanceManager   performance;
     private ActionManager        action;
 
-    private List<EventManager>   eventManagers            = new LinkedList<EventManager>();
+    private List<EventManager>   eventManagers;
 
-    private int                  taskId                   = -1;
-    private int                  ingameseconds            = 0;
-    private long                 lastIngamesecondTime     = 0L;
-    private long                 lastIngamesecondDuration = 0L;
-    private boolean              skipCheck                = false;
+    private LagMeasureTask       lagMeasureTask;
+
+    private int                  taskId = -1;
 
     public NoCheat() {
 
@@ -57,14 +63,25 @@ public class NoCheat extends JavaPlugin {
 
     public void onDisable() {
 
-        if(taskId != -1) {
-            this.getServer().getScheduler().cancelTask(taskId);
-            taskId = -1;
-        }
         PluginDescriptionFile pdfFile = this.getDescription();
 
-        if(conf != null)
+        if(taskId != -1) {
+            getServer().getScheduler().cancelTask(taskId);
+            taskId = -1;
+        }
+
+        if(lagMeasureTask != null) {
+            lagMeasureTask.cancel();
+            lagMeasureTask = null;
+        }
+
+        if(conf != null) {
             conf.cleanup();
+            conf = null;
+        }
+
+        // Just to be sure nothing gets left out
+        getServer().getScheduler().cancelTasks(this);
 
         log.logToConsole(LogLevel.LOW, "[NoCheat] version [" + pdfFile.getVersion() + "] is disabled.");
     }
@@ -72,166 +89,126 @@ public class NoCheat extends JavaPlugin {
     public void onEnable() {
 
         // First set up logging
-        this.log = new LogManager(this);
+        this.log = new LogManager();
 
-        log.logToConsole(LogLevel.LOW, "[NoCheat] This version is for CB #1240. It may break at any time and for any other version.");
+        log.logToConsole(LogLevel.LOW, "[NoCheat] This version for CB #1060. It may break at any time and for any other version.");
 
+        // Then set up in memory per player data storage
         this.data = new DataManager();
-        this.action = new ActionManager();
 
-        // parse the nocheat.yml config file
-        this.conf = new ConfigurationManager(this.getDataFolder().getPath(), action);
+        // Then read the configuration files
+        this.conf = new ConfigurationManager(this.getDataFolder().getPath());
 
+        // Then set up the performance counters
+        this.performance = new PerformanceManager();
+
+        // Then set up the Action Manager
+        this.action = new ActionManager(this);
+
+        eventManagers = new ArrayList<EventManager>(8); // Big enough
+        // Then set up the event listeners
         eventManagers.add(new PlayerMoveEventManager(this));
         eventManagers.add(new PlayerTeleportEventManager(this));
         eventManagers.add(new PlayerChatEventManager(this));
         eventManagers.add(new BlockBreakEventManager(this));
         eventManagers.add(new BlockPlaceEventManager(this));
+        eventManagers.add(new EntityDamageEventManager(this));
+        eventManagers.add(new SwingEventManager(this));
+        TimedEventManager m = new TimedEventManager(this);
+        eventManagers.add(m);
 
-        PluginDescriptionFile pdfFile = this.getDescription();
-
-        if(taskId == -1) {
-            taskId = this.getServer().getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
-
-                @Override
-                public void run() {
-
-                    // If the previous second took to long, skip checks during
-                    // this second
-                    skipCheck = lastIngamesecondDuration > 1500;
-
-                    long time = System.currentTimeMillis();
-                    lastIngamesecondDuration = time - lastIngamesecondTime;
-                    if(lastIngamesecondDuration < 1000)
-                        lastIngamesecondDuration = 1000;
-                    lastIngamesecondTime = time;
-                    ingameseconds++;
-                }
-            }, 0, 20);
+        // Then set up a task to monitor server lag
+        if(lagMeasureTask == null) {
+            lagMeasureTask = new LagMeasureTask(this);
+            lagMeasureTask.start();
         }
 
-        printActiveChecks();
+        // Then print a list of active checks per world
+        ActiveCheckPrinter.printActiveChecks(this, eventManagers);
 
-        log.logToConsole(LogLevel.LOW, "[NoCheat] version [" + pdfFile.getVersion() + "] is enabled.");
+        // Tell the server admin that we finished loading NoCheat now
+        log.logToConsole(LogLevel.LOW, "[NoCheat] version [" + this.getDescription().getVersion() + "] is enabled.");
     }
 
-    public ConfigurationManager getConfigurationManager() {
-        return conf;
+    public ConfigurationCache getConfig(Player player) {
+        return getConfig(player.getWorld());
     }
 
-    public LogManager getLogManager() {
-        return log;
+    public ConfigurationCache getConfig(World world) {
+        return conf.getConfigurationCacheForWorld(world.getName());
     }
 
-    public DataManager getDataManager() {
-        return data;
+    public void log(LogLevel level, String message, ConfigurationCache cc) {
+        log.log(level, message, cc);
     }
 
-    public ActionManager getActionManager() {
-        return action;
+    public BaseData getData(String playerName) {
+        return data.getData(playerName);
     }
 
-    public int getIngameSeconds() {
-        return ingameseconds;
+    public void clearCriticalData(String playerName) {
+        data.clearCriticalData(playerName);
     }
 
-    public long getIngameSecondDuration() {
-        return lastIngamesecondDuration;
+    public void playerJoined(String playerName) {
+        clearCriticalData(playerName);
     }
 
-    public boolean skipCheck() {
-        return skipCheck;
-    }
-
-    /**
-     * Print the list of active checks to the console, on a per world basis
-     */
-    private void printActiveChecks() {
-
-        boolean introPrinted = false;
-        String intro = "[NoCheat] Active Checks: ";
-
-        // Print active checks for NoCheat, if needed.
-        for(World world : this.getServer().getWorlds()) {
-
-            StringBuilder line = new StringBuilder("  ").append(world.getName()).append(": ");
-
-            int length = line.length();
-
-            ConfigurationCache cc = this.conf.getConfigurationCacheForWorld(world.getName());
-
-            if(cc.debug.showchecks) {
-                for(EventManager em : eventManagers) {
-                    List<String> checks = em.getActiveChecks(cc);
-                    if(checks.size() > 0) {
-                        for(String active : em.getActiveChecks(cc)) {
-                            line.append(active).append(' ');
-                        }
-
-                        if(!introPrinted) {
-                            log.logToConsole(LogLevel.LOW, intro);
-                            introPrinted = true;
-                        }
-
-                        log.logToConsole(LogLevel.LOW, line.toString());
-
-                        line = new StringBuilder(length);
-
-                        for(int i = 0; i < length; i++) {
-                            line.append(' ');
-                        }
-                    }
-                }
-            }
-        }
+    public Performance getPerformance(Type type) {
+        return performance.get(type);
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        return CommandHandler.handleCommand(this, sender, command, label, args);
+    }
 
-        if(command.getName().equalsIgnoreCase("nocheat") && args.length > 0) {
-            if(args[0].equalsIgnoreCase("permlist") && args.length >= 2) {
-                // permlist command was used CORRECTLY
+    public int getIngameSeconds() {
+        if(lagMeasureTask != null)
+            return lagMeasureTask.getIngameSeconds();
+        return 0;
+    }
 
-                // Does the sender have permission?
-                if(sender instanceof Player && !sender.hasPermission(Permissions.ADMIN_PERMLIST)) {
-                    return false;
-                }
+    public boolean skipCheck() {
+        if(lagMeasureTask != null)
+            return lagMeasureTask.skipCheck();
+        return false;
+    }
 
-                // Get the player names
-                Player player = this.getServer().getPlayerExact(args[1]);
-                if(player == null) {
-                    sender.sendMessage("Unknown player: " + args[1]);
-                    return true;
-                } else {
-                    String prefix = "";
-                    if(args.length == 3) {
-                        prefix = args[2];
-                    }
-                    // Make a copy to allow sorting
-                    List<Permission> perms = new LinkedList<Permission>(this.getDescription().getPermissions());
-                    Collections.reverse(perms);
+    public long getIngameSecondDuration() {
+        if(lagMeasureTask != null)
+            return lagMeasureTask.getIngameSecondDuration();
+        return 1000L;
+    }
 
-                    sender.sendMessage("Player " + player.getName() + " has the permission(s):");
-                    for(Permission permission : perms) {
-                        if(permission.getName().startsWith(prefix)) {
-                            sender.sendMessage(permission.getName() + ": " + player.hasPermission(permission));
-                        }
-                    }
-                    return true;
-                }
-            } else if(args[0].equalsIgnoreCase("reload")) {
-                // reload command was used
-
-                // Does the sender have permission?
-                if(sender instanceof Player && !sender.hasPermission(Permissions.ADMIN_RELOAD)) {
-                    return false;
-                }
-
-                this.conf.cleanup();
-                this.conf = new ConfigurationManager(this.getDataFolder().getPath(), this.action);
-            }
+    public boolean execute(Player player, ActionList actions, int violationLevel, ExecutionHistory history, ConfigurationCache cc) {
+        if(action != null) {
+            return action.executeActions(player, actions, violationLevel, history, cc);
         }
         return false;
+    }
+
+    public void logToConsole(LogLevel low, String message) {
+        if(log != null) {
+            log.logToConsole(low, message);
+        }
+
+    }
+
+    public void reloadConfig() {
+        conf.cleanup();
+        this.conf = new ConfigurationManager(this.getDataFolder().getPath());
+        data.cleanDataMap();
+        data.clearCriticalData();
+    }
+
+    /**
+     * Call this periodically to walk over the stored data map and remove
+     * old/unused entries
+     * 
+     */
+    public void cleanDataMap() {
+        data.cleanDataMap();
+
     }
 }

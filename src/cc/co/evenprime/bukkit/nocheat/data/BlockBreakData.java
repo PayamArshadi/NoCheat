@@ -1,18 +1,18 @@
 package cc.co.evenprime.bukkit.nocheat.data;
 
-import org.bukkit.Location;
-
 /**
  * Playerspecific data for the blockbreak check group
  * 
- * @author Evenprime
- * 
  */
-public class BlockBreakData {
+public class BlockBreakData extends Data {
 
-    public double reachViolationLevel     = 0.0D;
+    public double                 reachViolationLevel        = 0.0D;
+    public double                 directionViolationLevel    = 0.0D;
 
-    public double directionViolationLevel = 0.0D;
+    public long                   directionLastViolationTime = 0;
+    public final SimpleLocation   instaBrokeBlockLocation    = new SimpleLocation();
 
-    public Location instaBrokeBlockLocation = null;
+    public final ExecutionHistory history                    = new ExecutionHistory();
+    public double                 noswingVL                  = 0.0D;
+
 }

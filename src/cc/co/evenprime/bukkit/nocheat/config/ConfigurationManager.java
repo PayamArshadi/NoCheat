@@ -6,8 +6,8 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
 import java.util.logging.Handler;
@@ -15,14 +15,11 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
-import cc.co.evenprime.bukkit.nocheat.actions.ActionManager;
-import cc.co.evenprime.bukkit.nocheat.actions.types.Action;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionMapper;
 
 /**
  * Central location for everything that's described in the configuration file(s)
- * 
- * @author Evenprime
  * 
  */
 public class ConfigurationManager {
@@ -30,7 +27,6 @@ public class ConfigurationManager {
     private final static String                   configFileName            = "config.txt";
     private final static String                   actionFileName            = "actions.txt";
     private final static String                   defaultActionFileName     = "default_actions.txt";
-    private final static String                   descriptionsFileName      = "descriptions.txt";
 
     private final Map<String, ConfigurationCache> worldnameToConfigCacheMap = new HashMap<String, ConfigurationCache>();
 
@@ -40,7 +36,7 @@ public class ConfigurationManager {
 
     private final Configuration                   defaultConfig;
 
-    private class LogFileFormatter extends Formatter {
+    private static class LogFileFormatter extends Formatter {
 
         private final SimpleDateFormat date;
 
@@ -74,20 +70,22 @@ public class ConfigurationManager {
     // private final static String loggerName = "cc.co.evenprime.nocheat";
     // public final Logger logger = Logger.getLogger(loggerName);
 
-    public ConfigurationManager(String rootConfigFolder, ActionManager actionManager) {
+    public ConfigurationManager(String rootConfigFolder) {
+
+        ActionMapper actionMapper = new ActionMapper();
 
         // Parse actions file
-        // MOVE TO ACTIONMANAGER PARSER OR SOMETHING
-        initializeActions(rootConfigFolder, actionManager);
-        
-        defaultConfig = new DefaultConfiguration(actionManager);
-        
-        // Setup the configuration tree
-        initializeConfig(rootConfigFolder, actionManager);
+        initializeActions(rootConfigFolder, actionMapper);
+
+        // Create a default configuration
+        defaultConfig = new DefaultConfiguration(actionMapper);
+
+        // Setup the real configuration
+        initializeConfig(rootConfigFolder, actionMapper);
 
     }
 
-    private void initializeActions(String rootConfigFolder, ActionManager actionManager) {
+    private void initializeActions(String rootConfigFolder, ActionMapper actionManager) {
 
         File defaultActionsFile = new File(rootConfigFolder, defaultActionFileName);
 
@@ -96,11 +94,7 @@ public class ConfigurationManager {
 
         // now parse that file again
         FlatFileAction parser = new FlatFileAction(defaultActionsFile);
-        List<Action> defaultActions = parser.read();
-
-        for(Action a : defaultActions) {
-            actionManager.addAction(a);
-        }
+        parser.read(actionManager);
 
         // Check if the "custom" action file exists, if not, create one
         File customActionsFile = new File(rootConfigFolder, actionFileName);
@@ -109,11 +103,7 @@ public class ConfigurationManager {
         }
 
         parser = new FlatFileAction(customActionsFile);
-        List<Action> customActions = parser.read();
-
-        for(Action a : customActions) {
-            actionManager.addAction(a);
-        }
+        parser.read(actionManager);
     }
 
     /**
@@ -122,17 +112,20 @@ public class ConfigurationManager {
      * 
      * @param configurationFile
      */
-    private void initializeConfig(String rootConfigFolder, ActionManager action) {
+    private void initializeConfig(String rootConfigFolder, ActionMapper action) {
 
         // First try to obtain and parse the global config file
         FlatFileConfiguration root;
         File globalConfigFile = getGlobalConfigFile(rootConfigFolder);
 
         root = new FlatFileConfiguration(defaultConfig, true, globalConfigFile);
-        try {
-            root.load(action);
-        } catch(Exception e) {
 
+        if(globalConfigFile.exists()) {
+            try {
+                root.load(action);
+            } catch(Exception e) {
+                e.printStackTrace();
+            }
         }
 
         try {
@@ -148,22 +141,23 @@ public class ConfigurationManager {
         // Try to find world-specific config files
         Map<String, File> worldFiles = getWorldSpecificConfigFiles(rootConfigFolder);
 
-        for(String worldName : worldFiles.keySet()) {
+        for(Entry<String, File> worldEntry : worldFiles.entrySet()) {
 
-            File worldConfigFile = worldFiles.get(worldName);
+            File worldConfigFile = worldEntry.getValue();
 
             FlatFileConfiguration world = new FlatFileConfiguration(root, false, worldConfigFile);
 
             try {
                 world.load(action);
 
-                worldnameToConfigCacheMap.put(worldName, createConfigurationCache(rootConfigFolder, world));
+                worldnameToConfigCacheMap.put(worldEntry.getKey(), createConfigurationCache(rootConfigFolder, world));
 
                 // write the config file back to disk immediately
                 world.save();
 
             } catch(IOException e) {
-                System.out.println("NoCheat: Couldn't load world-specific config for " + worldName);
+                System.out.println("NoCheat: Couldn't load world-specific config for " + worldEntry.getKey());
+                e.printStackTrace();
             }
         }
     }
@@ -174,14 +168,14 @@ public class ConfigurationManager {
 
     }
 
-    public static File getGlobalConfigFile(String rootFolder) {
+    private static File getGlobalConfigFile(String rootFolder) {
 
         File globalConfig = new File(rootFolder, configFileName);
 
         return globalConfig;
     }
 
-    public static Map<String, File> getWorldSpecificConfigFiles(String rootConfigFolder) {
+    private static Map<String, File> getWorldSpecificConfigFiles(String rootConfigFolder) {
 
         HashMap<String, File> files = new HashMap<String, File>();
 
@@ -205,6 +199,14 @@ public class ConfigurationManager {
 
         FileHandler fh = fileToFileHandlerMap.get(logfile);
 
+        // this logger will be used ONLY for logging to a single log-file and
+        // only
+        // in this plugin, therefore it doesn't need any namespace
+        Logger l = Logger.getAnonymousLogger();
+        l.setLevel(Level.INFO);
+        // Ignore parent's settings
+        l.setUseParentHandlers(false);
+
         if(fh == null) {
             try {
                 try {
@@ -220,21 +222,12 @@ public class ConfigurationManager {
                 fh.setFormatter(new LogFileFormatter());
                 fileToFileHandlerMap.put(logfile, fh);
 
-            } catch(SecurityException e) {
-                e.printStackTrace();
-            } catch(IOException e) {
+                l.addHandler(fh);
+
+            } catch(Exception e) {
                 e.printStackTrace();
             }
         }
-
-        // this logger will be used ONLY for logging to a single log-file and
-        // only
-        // in this plugin, therefore it doesn't need any namespace
-        Logger l = Logger.getAnonymousLogger();
-        l.setLevel(Level.INFO);
-        // Ignore parent's settings
-        l.setUseParentHandlers(false);
-        l.addHandler(fh);
 
         return l;
     }
@@ -280,18 +273,5 @@ public class ConfigurationManager {
 
             return cache;
         }
-    }
-
-    public static File getDescriptionFile(String rootConfigFolder) {
-
-        return new File(rootConfigFolder, descriptionsFileName);
-    }
-
-    public static File getDefaultActionFile(String rootConfigFolder) {
-        return new File(rootConfigFolder, defaultActionFileName);
-    }
-
-    public static File getActionFile(String rootConfigFolder) {
-        return new File(rootConfigFolder, actionFileName);
     }
 }

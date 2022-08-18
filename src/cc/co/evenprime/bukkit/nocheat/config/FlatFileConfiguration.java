@@ -8,9 +8,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 
-import cc.co.evenprime.bukkit.nocheat.actions.ActionList;
-import cc.co.evenprime.bukkit.nocheat.actions.ActionManager;
 import cc.co.evenprime.bukkit.nocheat.actions.types.Action;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionList;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionMapper;
+import cc.co.evenprime.bukkit.nocheat.config.util.OptionNode;
 import cc.co.evenprime.bukkit.nocheat.log.LogLevel;
 
 public class FlatFileConfiguration extends Configuration {
@@ -23,7 +24,7 @@ public class FlatFileConfiguration extends Configuration {
         this.file = file;
     }
 
-    public void load(ActionManager action) throws IOException {
+    public void load(ActionMapper action) throws IOException {
 
         BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
 
@@ -37,7 +38,7 @@ public class FlatFileConfiguration extends Configuration {
 
     }
 
-    private void parse(String line, ActionManager action) throws IOException {
+    private void parse(String line, ActionMapper action) throws IOException {
 
         line = line.trim();
 
@@ -79,7 +80,7 @@ public class FlatFileConfiguration extends Configuration {
         }
     }
 
-    private ActionList parseActionList(OptionNode node, String key, String value, ActionManager action) {
+    private ActionList parseActionList(OptionNode node, String key, String value, ActionMapper action) {
 
         String[] s = key.split("\\.");
         String treshold = s[s.length - 1];
@@ -95,7 +96,6 @@ public class FlatFileConfiguration extends Configuration {
 
         return al;
     }
-
 
     private OptionNode getOptionNodeForString(OptionNode root, String key) {
         String parts[] = key.split("\\.", 2);
@@ -179,17 +179,21 @@ public class FlatFileConfiguration extends Configuration {
 
                 saveRecursive(w, o);
             }
-            
+
             return;
+        } else {
+            saveLeaf(w, node);
         }
 
+    }
+
+    private void saveLeaf(BufferedWriter w, OptionNode node) throws IOException {
         // Save a leaf node, if it's really stored here
         Object object = this.get(node);
 
         if(object == null) {
             return;
         }
-
         // Get the full id of the node
         String id = node.getName();
         OptionNode i = node;
@@ -219,13 +223,13 @@ public class FlatFileConfiguration extends Configuration {
         }
     }
 
-    private void saveActionList(BufferedWriter w, String id, ActionList actionList) throws IOException {        
+    private void saveActionList(BufferedWriter w, String id, ActionList actionList) throws IOException {
         for(Integer treshold : actionList.getTresholds()) {
-            String s = "";
+            StringBuilder s = new StringBuilder("");
             for(Action s2 : actionList.getActions(treshold)) {
-                s = s + " " + s2.name;
+                s.append(" ").append(s2.name);
             }
-            saveValue(w, id + "." + treshold, s.trim());
+            saveValue(w, id + "." + treshold, s.toString().trim());
         }
 
     }
@@ -238,7 +242,7 @@ public class FlatFileConfiguration extends Configuration {
         w.write(id + " = " + value + "\r\n");
     }
 
-    protected String removeQuotationMarks(String s) {
+    private String removeQuotationMarks(String s) {
 
         s = s.trim();
 
@@ -251,7 +255,7 @@ public class FlatFileConfiguration extends Configuration {
         return s;
     }
 
-    protected String addQuotationMarks(String s) {
+    private String addQuotationMarks(String s) {
 
         return "\"" + s + "\"";
     }

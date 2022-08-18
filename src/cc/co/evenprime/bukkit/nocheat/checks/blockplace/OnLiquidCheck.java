@@ -1,58 +1,59 @@
 package cc.co.evenprime.bukkit.nocheat.checks.blockplace;
 
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
 
 import cc.co.evenprime.bukkit.nocheat.NoCheat;
-import cc.co.evenprime.bukkit.nocheat.actions.ActionExecutor;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
 import cc.co.evenprime.bukkit.nocheat.data.BlockPlaceData;
 import cc.co.evenprime.bukkit.nocheat.data.LogData;
 
 /**
  * 
- * @author Evenprime
- * 
  */
 public class OnLiquidCheck {
 
-    private final NoCheat        plugin;
-    private final ActionExecutor action;
+    private final NoCheat plugin;
 
     public OnLiquidCheck(NoCheat plugin) {
         this.plugin = plugin;
-        action = new ActionExecutor(plugin);
     }
 
-    public boolean check(Player player, Block blockPlaced, Block blockPlacedAgainst, BlockPlaceData data, ConfigurationCache cc) {
+    public boolean check(final Player player, final BaseData data, final Block blockPlaced, final Block blockPlacedAgainst, final ConfigurationCache cc) {
 
         boolean cancel = false;
 
-        if(blockPlaced == null || blockPlaced.isEmpty()) {
+        final BlockPlaceData blockplace = data.blockplace;
+        final LogData log = data.log;
+        
+        if(blockPlaced == null || blockPlaced.isEmpty() || (blockPlacedAgainst != null && isSolid(blockPlacedAgainst.getTypeId()))) {
             // all ok
-        } else if(blockPlacedAgainst != null && isSolid(blockPlacedAgainst)) {
-            // all ok
-        } else if(isSolid(blockPlaced.getRelative(BlockFace.DOWN)) || isSolid(blockPlaced.getRelative(BlockFace.WEST)) || isSolid(blockPlaced.getRelative(BlockFace.EAST)) || isSolid(blockPlaced.getRelative(BlockFace.NORTH)) || isSolid(blockPlaced.getRelative(BlockFace.SOUTH)) || isSolid(blockPlaced.getRelative(BlockFace.UP))) {
+        } else if(nextToSolid(blockPlaced.getWorld(), blockPlaced.getX(), blockPlaced.getY(), blockPlaced.getZ())) {
             // all ok
         } else {
-            data.onliquidViolationLevel += 1;
-            LogData ldata = plugin.getDataManager().getLogData(player);
-            ldata.check = "blockplace.onliquid";
-            ldata.placed = blockPlaced;
-            ldata.placedAgainst = blockPlacedAgainst;
+            blockplace.onliquidViolationLevel += 1;
+            log.check = "blockplace.onliquid";
+            log.placedLocation.set(blockPlaced);
+            log.placedType = blockPlaced.getType();
+            log.placedAgainstLocation.set(blockPlacedAgainst);
 
-            cancel = action.executeActions(player, cc.blockplace.onliquidActions, (int) data.onliquidViolationLevel, ldata, cc);
+            cancel = plugin.execute(player, cc.blockplace.onliquidActions, (int) blockplace.onliquidViolationLevel, blockplace.history, cc);
         }
 
-        data.onliquidViolationLevel *= 0.95D; // Reduce level over time
+        blockplace.onliquidViolationLevel *= 0.95D; // Reduce level over
+                                                         // time
 
         return cancel;
     }
 
-    public boolean isSolid(Block block) {
-        Material m = block.getType();
-        return !(m == Material.AIR) || (m == Material.WATER) || (m == Material.STATIONARY_WATER) || (m == Material.LAVA) || (m == Material.STATIONARY_LAVA);
+    private static final boolean nextToSolid(final World world, final int x, final int y, final int z) {
+        return isSolid(world.getBlockTypeIdAt(x, y - 1, z)) || isSolid(world.getBlockTypeIdAt(x - 1, y, z)) || isSolid(world.getBlockTypeIdAt(x + 1, y, z)) || isSolid(world.getBlockTypeIdAt(x, y, z + 1)) || isSolid(world.getBlockTypeIdAt(x, y, z - 1)) || isSolid(world.getBlockTypeIdAt(x, y + 1, z));
+    }
+
+    private static final boolean isSolid(int id) {
+        return !((id == Material.AIR.getId()) || (id == Material.WATER.getId()) || (id == Material.STATIONARY_WATER.getId()) || (id == Material.LAVA.getId()) || (id == Material.STATIONARY_LAVA.getId()));
     }
 }

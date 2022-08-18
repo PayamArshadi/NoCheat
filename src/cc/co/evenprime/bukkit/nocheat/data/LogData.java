@@ -1,32 +1,23 @@
 package cc.co.evenprime.bukkit.nocheat.data;
 
-import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.block.Block;
-import org.bukkit.entity.Player;
 
 /**
  * Everything that could be relevant for logging or consolecommand actions
- * 
- * @author Evenprime
- *
  */
-public class LogData {
+public class LogData extends Data {
 
-    // The player never changes
-    public final Player player;
-    public String check;
-    public int violationLevel;
-    public Location toLocation;
-    public int packets;
-    public String text;
-    public Material placedMaterial;
-    public Block placed;
-    public Block placedAgainst;
-    public double reachdistance;
-    public float falldistance;
-    
-    public LogData(Player player) {
-        this.player = player;
-    }
+    public String                check;
+    public int                   violationLevel;
+    public final PreciseLocation toLocation            = new PreciseLocation();
+    public int                   packets;
+    public String                text;
+    public final SimpleLocation  placedLocation        = new SimpleLocation();
+    public Material              placedType;
+    public final SimpleLocation  placedAgainstLocation = new SimpleLocation();
+    public double                reachdistance;
+    public float                 falldistance;
+    public String                playerName;
+    public int                   godmodeTicksBehind;
+
 }

@@ -12,6 +12,7 @@ import cc.co.evenprime.bukkit.nocheat.actions.types.Action;
 import cc.co.evenprime.bukkit.nocheat.actions.types.ConsolecommandAction;
 import cc.co.evenprime.bukkit.nocheat.actions.types.LogAction;
 import cc.co.evenprime.bukkit.nocheat.actions.types.SpecialAction;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionMapper;
 import cc.co.evenprime.bukkit.nocheat.log.LogLevel;
 
 public class FlatFileAction {
@@ -22,7 +23,7 @@ public class FlatFileAction {
         this.file = file;
     }
 
-    public List<Action> read() {
+    public void read(ActionMapper mapper) {
 
         List<Action> actions = new ArrayList<Action>();
 
@@ -48,7 +49,10 @@ public class FlatFileAction {
             e.printStackTrace();
         }
         
-        return actions;
+        for(Action a : actions) {
+            mapper.addAction(a);
+        }
+
     }
 
     private Action parseLine(String line) {

@@ -1,106 +1,90 @@
 package cc.co.evenprime.bukkit.nocheat.data;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-
-import org.bukkit.entity.Player;
+import java.util.Map.Entry;
 
 /**
  * Provide secure access to player-specific data objects for various checks or
- * check groups
- * 
- * @author Evenprime
- * 
+ * check groups.
  */
 public class DataManager {
 
     // Store data between Events
-    private final Map<Player, MovingData>     movingData     = new HashMap<Player, MovingData>();
-    private final Map<Player, BlockBreakData> blockbreakData = new HashMap<Player, BlockBreakData>();
-    private final Map<Player, BlockPlaceData> blockPlaceData = new HashMap<Player, BlockPlaceData>();
-    private final Map<Player, ChatData>       chatData       = new HashMap<Player, ChatData>();
-    private final Map<Player, LogData>        logData        = new HashMap<Player, LogData>();
+    private final Map<String, BaseData> map;
+    private final List<String>          removals;
 
     public DataManager() {
-
+        this.map = new HashMap<String, BaseData>();
+        this.removals = new ArrayList<String>(5);
     }
 
-    public MovingData getMovingData(Player player) {
+    /**
+     * Get a data object of the specified class. If none is stored yet, create
+     * one.
+     */
+    public BaseData getData(String playerName) {
 
-        MovingData data;
-
-        // intentionally not thread-safe, because bukkit events are handled
-        // in sequence anyway, so zero chance of two move events of the same
-        // player being handled at the same time
-        data = movingData.get(player);
-        if(data == null) {
-            data = new MovingData();
-            movingData.put(player, data);
-        }
-
-        return data;
-    }
-
-    public BlockBreakData getBlockBreakData(Player player) {
-
-        BlockBreakData data;
-
-        // intentionally not thread-safe, because bukkit events are handled
-        // in sequence anyway, so zero chance of two move events of the same
-        // player being handled at the same time
-        data = blockbreakData.get(player);
-        if(data == null) {
-            data = new BlockBreakData();
-            blockbreakData.put(player, data);
-        }
-
-        return data;
-    }
-
-    public BlockPlaceData getBlockPlaceData(Player player) {
-        BlockPlaceData data;
+        BaseData data = this.map.get(playerName);
 
         // intentionally not thread-safe, because bukkit events are handled
         // in sequence anyway, so zero chance of two events of the same
         // player being handled at the same time
-        data = blockPlaceData.get(player);
+        // And if it still happens by accident, it's no real loss anyway, as
+        // losing data of one instance doesn't really hurt at all
         if(data == null) {
-            data = new BlockPlaceData();
-            blockPlaceData.put(player, data);
+            data = new BaseData();
+            data.log.playerName = playerName;
+            this.map.put(playerName, data);
         }
+
+        data.lastUsedTime = System.currentTimeMillis();
 
         return data;
     }
 
-    public ChatData getChatData(Player player) {
-        ChatData data;
-
-        // intentionally not thread-safe, because bukkit events are handled
-        // in sequence anyway, so zero chance of two events of the same
-        // player being handled at the same time
-        // And if it still happens by accident, it's no real loss anyway
-        data = chatData.get(player);
-        if(data == null) {
-            data = new ChatData();
-            chatData.put(player, data);
+    /**
+     * Reset data that may cause problems after e.g. changing the config
+     * 
+     */
+    public void clearCriticalData() {
+        for(BaseData b : this.map.values()) {
+            b.clearCriticalData();
         }
-
-        return data;
     }
 
-    public LogData getLogData(Player player) {
-        LogData data;
+    /**
+     * check if some data hasn't been used for a while and remove it
+     * 
+     */
+    public void cleanDataMap() {
+        synchronized(removals) {
+            long time = System.currentTimeMillis();
+            try {
+                for(Entry<String, BaseData> p : this.map.entrySet()) {
+                    if(p.getValue().shouldBeRemoved(time)) {
+                        removals.add(p.getKey());
+                    }
+                }
 
-        // intentionally not thread-safe, because bukkit events are handled
-        // in sequence anyway, so zero chance of two events of the same
-        // player being handled at the same time
-        // And if it still happens by accident, it's no real loss anyway
-        data = logData.get(player);
-        if(data == null) {
-            data = new LogData(player);
-            logData.put(player, data);
+                for(String p : removals) {
+                    this.map.remove(p);
+                }
+
+                removals.clear();
+            } catch(Exception e) {
+                e.printStackTrace();
+            }
         }
-
-        return data;
     }
+
+    public void clearCriticalData(String playerName) {
+        BaseData data = this.map.get(playerName);
+        if(data != null) {
+            data.clearCriticalData();
+        }
+    }
+
 }

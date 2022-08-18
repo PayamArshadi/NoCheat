@@ -1,12 +1,9 @@
 package cc.co.evenprime.bukkit.nocheat.config.cache;
 
-import cc.co.evenprime.bukkit.nocheat.actions.ActionList;
 import cc.co.evenprime.bukkit.nocheat.config.Configuration;
-import cc.co.evenprime.bukkit.nocheat.config.DefaultConfiguration;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionList;
 
 /**
- * 
- * @author Evenprime
  * 
  */
 public class CCBlockPlace {
@@ -19,16 +16,21 @@ public class CCBlockPlace {
     public final double     reachDistance;
     public final ActionList reachActions;
 
+    public final boolean    noswingCheck;
+    public final ActionList noswingActions;
+
     public CCBlockPlace(Configuration data) {
 
-        check = data.getBoolean(DefaultConfiguration.BLOCKPLACE_CHECK);
-        
-        onliquidCheck = data.getBoolean(DefaultConfiguration.BLOCKPLACE_ONLIQUID_CHECK);
-        onliquidActions = data.getActionList(DefaultConfiguration.BLOCKPLACE_ONLIQUID_ACTIONS);
+        check = data.getBoolean(Configuration.BLOCKPLACE_CHECK);
 
-        reachCheck = data.getBoolean(DefaultConfiguration.BLOCKPLACE_REACH_CHECK);
-        reachDistance = data.getInteger(DefaultConfiguration.BLOCKPLACE_REACH_LIMIT);
-        reachActions = data.getActionList(DefaultConfiguration.BLOCKPLACE_REACH_ACTIONS);
+        onliquidCheck = data.getBoolean(Configuration.BLOCKPLACE_ONLIQUID_CHECK);
+        onliquidActions = data.getActionList(Configuration.BLOCKPLACE_ONLIQUID_ACTIONS);
 
+        reachCheck = data.getBoolean(Configuration.BLOCKPLACE_REACH_CHECK);
+        reachDistance = data.getInteger(Configuration.BLOCKPLACE_REACH_LIMIT);
+        reachActions = data.getActionList(Configuration.BLOCKPLACE_REACH_ACTIONS);
+
+        noswingCheck = data.getBoolean(Configuration.BLOCKPLACE_NOSWING_CHECK);
+        noswingActions = data.getActionList(Configuration.BLOCKPLACE_NOSWING_ACTIONS);
     }
 }

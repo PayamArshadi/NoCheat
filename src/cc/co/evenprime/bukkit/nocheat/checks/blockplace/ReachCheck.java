@@ -1,59 +1,48 @@
 package cc.co.evenprime.bukkit.nocheat.checks.blockplace;
 
-import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Vector;
 
 import cc.co.evenprime.bukkit.nocheat.NoCheat;
-import cc.co.evenprime.bukkit.nocheat.actions.ActionExecutor;
+import cc.co.evenprime.bukkit.nocheat.checks.CheckUtil;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
 import cc.co.evenprime.bukkit.nocheat.data.BlockPlaceData;
-import cc.co.evenprime.bukkit.nocheat.data.LogData;
 
 /**
  * The reach check will find out if a player interacts with something that's too
  * far away
  * 
- * @author Evenprime
- * 
  */
 public class ReachCheck {
 
-    private final NoCheat        plugin;
-    private final ActionExecutor action;
+    private final NoCheat plugin;
 
     public ReachCheck(NoCheat plugin) {
         this.plugin = plugin;
-        this.action = new ActionExecutor(plugin);
     }
 
-    public boolean check(Player player, Block blockPlaced, Block placedAgainstBlock, BlockPlaceData data, ConfigurationCache cc) {
+    public boolean check(final Player player, final BaseData data, final Block placedAgainstBlock, final ConfigurationCache cc) {
 
         boolean cancel = false;
 
-        Location eyes = player.getEyeLocation();
+        final double distance = CheckUtil.reachCheck(player, placedAgainstBlock.getX() + 0.5D, placedAgainstBlock.getY() + 0.5D, placedAgainstBlock.getZ() + 0.5D, cc.blockplace.reachDistance);
 
-        final double x1 = ((double) placedAgainstBlock.getX()) - eyes.getX();
-        final double y1 = ((double) placedAgainstBlock.getY()) - eyes.getY();
-        final double z1 = ((double) placedAgainstBlock.getZ()) - eyes.getZ();
+        BlockPlaceData blockplace = data.blockplace;
 
-        double distance = new Vector(x1 + 0.5, y1 + +0.5, z1 + +0.5).length();
-
-        if(distance > cc.blockplace.reachDistance) {
+        if(distance > 0D) {
             // Player failed the check
 
             // Increment violation counter
-            data.reachViolationLevel += 1;
+            blockplace.reachViolationLevel += distance;
 
             // Prepare some event-specific values for logging and custom actions
-            LogData ldata = plugin.getDataManager().getLogData(player);
-            ldata.check = "blockplace.reach";
-            ldata.reachdistance = distance;
+            data.log.check = "blockplace.reach";
+            data.log.reachdistance = distance;
 
-            cancel = action.executeActions(player, cc.blockplace.reachActions, (int) data.reachViolationLevel, ldata, cc);
+            cancel = plugin.execute(player, cc.blockplace.reachActions, (int) blockplace.reachViolationLevel, blockplace.history, cc);
         } else {
-            data.reachViolationLevel *= 0.9D;
+            blockplace.reachViolationLevel *= 0.9D;
         }
 
         return cancel;

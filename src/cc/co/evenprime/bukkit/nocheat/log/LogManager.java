@@ -3,9 +3,9 @@ package cc.co.evenprime.bukkit.nocheat.log;
 import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 
-import cc.co.evenprime.bukkit.nocheat.NoCheat;
 import cc.co.evenprime.bukkit.nocheat.config.Permissions;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
 
@@ -14,15 +14,11 @@ import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
  * specific place or go through configuration/permissions to decide if and where
  * the message will be visible
  * 
- * @author Evenprime
- * 
  */
 public class LogManager {
 
-    //private final NoCheat plugin;
+    public LogManager() {
 
-    public LogManager(NoCheat plugin) {
-        //this.plugin = plugin;
     }
 
     /**
@@ -38,11 +34,11 @@ public class LogManager {
             return;
 
         if(cc.logging.fileLevel.matches(level)) {
-            logToFile(level, message, cc.logging.filelogger);
+            logToFile(level, ChatColor.stripColor(message), cc.logging.filelogger);
         }
 
         if(cc.logging.consoleLevel.matches(level)) {
-            logToConsole(level, message);
+            logToConsole(level, ChatColor.stripColor(message));
         }
 
         if(cc.logging.chatLevel.matches(level)) {
@@ -66,7 +62,7 @@ public class LogManager {
      * @param level
      * @param message
      */
-    public void logToChat(LogLevel level, String message) {
+    private void logToChat(LogLevel level, String message) {
         for(Player player : Bukkit.getServer().getOnlinePlayers()) {
             if(player.hasPermission(Permissions.ADMIN_CHATLOG)) {
                 player.sendMessage(message);
@@ -81,7 +77,7 @@ public class LogManager {
      * @param message
      * @param fileLogger
      */
-    public void logToFile(LogLevel level, String message, Logger fileLogger) {
+    private void logToFile(LogLevel level, String message, Logger fileLogger) {
         fileLogger.log(level.level, message);
     }
 }

@@ -3,11 +3,11 @@ package cc.co.evenprime.bukkit.nocheat.config;
 import java.util.HashMap;
 import java.util.Map;
 
+import cc.co.evenprime.bukkit.nocheat.config.util.OptionNode;
+
 /**
  * Textual explainations of options, will be displayed in the gui tool and the
  * descriptions.txt file.
- * 
- * @author Evenprime
  * 
  */
 public class Explainations {
@@ -18,6 +18,7 @@ public class Explainations {
 
         set(Configuration.LOGGING_ACTIVE, "Should NoCheat related messages get logged at all. Some messages may still appear, e.g. error\n messages, even if this option is deactivated");
 
+        set(Configuration.LOGGING_PREFIX, "The short text that appears in front of messages by NoCheat. Color codes are &0-&9 and &A-&F");
         set(Configuration.LOGGING_FILENAME, "Where logs that go to the logfile are stored. You can have different files for different worlds.");
         set(Configuration.LOGGING_FILELEVEL, "What log-level need messages to have to get stored in the logfile. Values are:\n low: all messages\n med: med and high messages only\n high: high messages only\n off: no messages at all.");
         set(Configuration.LOGGING_CONSOLELEVEL, "What log-level need messages to have to get displayed in your server console. Values are:\n low: all messages\n med: med and high messages only\n high: high messages only\n off: no messages at all.");
@@ -58,7 +59,12 @@ public class Explainations {
 
         set(Configuration.BLOCKBREAK_DIRECTION_CHECK, "If true, check if a player is looking at the block that he's breaking.");
         set(Configuration.BLOCKBREAK_DIRECTION_CHECKINSTABREAKBLOCKS, "If true, NoCheat will also check for direction for Instant-Breaking blocks.\nTHIS WILL CAUSE FALSE POSITIVES, when a player keeps his mouse button pressed and moves the mouse fast over the screen.");
+        set(Configuration.BLOCKBREAK_DIRECTION_PRECISION, "Define how precise a player has to hit blocks when mining. Lower values mean more precision, higher values less precision.");
+        set(Configuration.BLOCKBREAK_DIRECTION_PENALTYTIME, "Define how long after a failed attempt to dig a player will be disallowed to break another block. \nUnit is milliseconds, default is 300.");
         set(Configuration.BLOCKBREAK_DIRECTION_ACTIONS, "What should be done if a player is breaking blocks that are not in his line of sight.\nUnit is number of break(attempt)s outside the line of sight.");
+
+        set(Configuration.BLOCKBREAK_NOSWING_CHECK, "If true, check if a player swung his arm before breaking a block, which he should have done.");
+        set(Configuration.BLOCKBREAK_NOSWING_ACTIONS, "What should be done if a player didn't swing his arm.\nUnit is number of blockbreaking without armswinging.");
 
         set(Configuration.BLOCKPLACE_CHECK, "If true, do various checks on BlockPlace events.");
 
@@ -69,12 +75,33 @@ public class Explainations {
         set(Configuration.BLOCKPLACE_ONLIQUID_CHECK, "If true, check if a player is trying to place non-liquid blocks against liquid blocks\nIn a normal Minecraft game, it is impossible to place a block without it touching something that is considered solid (neither air nor a liquid).\nBut if people use a modified client, to can do that. This check tries to identify that trick.");
         set(Configuration.BLOCKPLACE_ONLIQUID_ACTIONS, "What should be done if a player is is trying to place non-liquid blocks against liquid blocks.\nUnit is number of place(attempt)s.");
 
+        set(Configuration.BLOCKPLACE_NOSWING_CHECK, "If true, check if a player swung his arm before placing a block, which he should have done.");
+        set(Configuration.BLOCKPLACE_NOSWING_ACTIONS, "What should be done if a player didn't swing his arm.\nUnit is number of blockplacing without armswinging.");
+
         set(Configuration.CHAT_CHECK, "If true, do various checks on PlayerChat events.");
 
         set(Configuration.CHAT_SPAM_CHECK, "If true, check if a player is spamming the chat.");
+        set(Configuration.CHAT_SPAM_WHITELIST, "A list of messages that should be ignored by the spam check, seperated by ','. All messages/commands starting with one of these will be let through.");
         set(Configuration.CHAT_SPAM_TIMEFRAME, "Over what timeframe (in seconds) should the messages be counted?\nWhen the time is over, counting starts at 0 again.");
         set(Configuration.CHAT_SPAM_LIMIT, "How many messages per timeframe may the player send without it counting as spamming?");
         set(Configuration.CHAT_SPAM_ACTIONS, "What should be done if a player is trying to spam the chat.\nUnit is number of chat messages above the limit you declared above.");
+
+        set(Configuration.FIGHT_CHECK, "If true, do various checks on Events related to fighting.");
+        set(Configuration.FIGHT_DIRECTION_CHECK, "If true, check if a player is really looking at enemies that he attacks.");
+        set(Configuration.FIGHT_DIRECTION_PRECISION, "Set how precise the check should be. If you experience the check to be too zealous, increase this value. \nIf you want to make it tighter, reduce this value. Default is 100.");
+        set(Configuration.FIGHT_DIRECTION_PENALTYTIME, "If a player fails the check, he will be unable to attack for this amount of time (in milliseconds), default is 500.");
+        set(Configuration.FIGHT_DIRECTION_ACTIONS, "What should be done if a player attacks entities that are not in his field of view.\nUnit is number of attacks on entities out of view.");
+
+        set(Configuration.FIGHT_SELFHIT_CHECK, "If true, check if a player is attacking itself, which should normally be impossible.");
+        set(Configuration.FIGHT_SELFHIT_ACTIONS, "What should be done if a player attacks himself.\nUnit is number of attacks on himself.");
+
+        set(Configuration.FIGHT_NOSWING_CHECK, "If true, check if a player swung his arm before attacking, which he should have done.");
+        set(Configuration.FIGHT_NOSWING_ACTIONS, "What should be done if a player didn't swing his arm.\nUnit is number of attacks without armswinging.");
+
+        set(Configuration.TIMED_CHECK, "If true, do various checks on things related to server and client time.");
+        set(Configuration.TIMED_GODMODE_CHECK, "If true, check or prevent if a player made himself invulnerable by exploiting a time-related bug.\nThis 'godmode' exploit looks similar to a player with huge lag, so be careful when punishing people for it.");
+        set(Configuration.TIMED_GODMODE_TICKSLIMIT, "How many ticks may a player be behind the server time before NoCheat reacts. Default is 50.");
+        set(Configuration.TIMED_GODMODE_ACTIONS, "What should be done if a player is considered using 'godmode'.\nUnit is number of ticks of potential godmode usage.");
 
     }
 
@@ -86,6 +113,7 @@ public class Explainations {
         String result = explainations.get(id);
 
         if(result == null) {
+            System.out.println("Missing description for " + id.getName());
             result = "No description available";
         }
 

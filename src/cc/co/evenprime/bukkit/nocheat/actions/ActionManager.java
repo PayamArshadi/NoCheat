@@ -1,39 +1,68 @@
 package cc.co.evenprime.bukkit.nocheat.actions;
 
-import java.util.HashMap;
-import java.util.Map;
+import org.bukkit.entity.Player;
 
+import cc.co.evenprime.bukkit.nocheat.NoCheat;
 import cc.co.evenprime.bukkit.nocheat.actions.types.Action;
+import cc.co.evenprime.bukkit.nocheat.actions.types.ConsolecommandAction;
+import cc.co.evenprime.bukkit.nocheat.actions.types.LogAction;
+import cc.co.evenprime.bukkit.nocheat.actions.types.SpecialAction;
+import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
+import cc.co.evenprime.bukkit.nocheat.config.util.ActionList;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
+import cc.co.evenprime.bukkit.nocheat.data.ExecutionHistory;
+import cc.co.evenprime.bukkit.nocheat.data.LogData;
 
 /**
- * @author Evenprime
+ * Will trace the history of action executions to decide if an action 'really'
+ * gets executed.
  * 
  */
 public class ActionManager {
 
-    private final Map<String, Action> actions;
+    private final NoCheat plugin;
 
-    public ActionManager() {
-        this.actions = new HashMap<String, Action>();
+    public ActionManager(NoCheat plugin) {
+        this.plugin = plugin;
     }
 
-    public void addAction(Action action) {
-        
-        this.actions.put(action.name.toLowerCase(), action);
-    }
+    public boolean executeActions(final Player player, final ActionList actions, final int violationLevel, final ExecutionHistory history, final ConfigurationCache cc) {
 
-    public Action getAction(String actionName) {
+        boolean special = false;
 
-        return this.actions.get(actionName.toLowerCase());
-    }
+        final BaseData data = plugin.getData(player.getName());
+        // Always set this here "by hand"
+        data.log.violationLevel = violationLevel;
 
-    public Action[] getActions(String[] actionNames) {
-        Action[] result = new Action[actionNames.length];
-        
-        for(int i = 0; i < actionNames.length; i++) {
-            result[i] = getAction(actionNames[i]);
+        final long time = System.currentTimeMillis() / 1000;
+
+        for(Action ac : actions.getActions(violationLevel)) {
+
+            if(history.executeAction(ac, time)) {
+                if(ac instanceof LogAction) {
+                    executeLogAction((LogAction) ac, data.log, cc);
+                } else if(ac instanceof SpecialAction) {
+                    special = true;
+                } else if(ac instanceof ConsolecommandAction) {
+                    executeConsoleCommand((ConsolecommandAction) ac, data.log);
+                }
+            }
         }
-        
-        return result;
+
+        return special;
+    }
+
+    private void executeLogAction(LogAction l, LogData data, ConfigurationCache cc) {
+        plugin.log(l.level, cc.logging.prefix + l.getLogMessage(data), cc);
+    }
+
+    private void executeConsoleCommand(ConsolecommandAction action, LogData data) {
+        String command = action.getCommand(data);
+        try {
+            plugin.getServer().broadcastMessage(command);
+        } catch(Exception e) {
+            System.out.println("[NoCheat] failed to execute the command '" + command + "', please check if everything is setup correct. ");
+            e.printStackTrace();
+        }
     }
 }

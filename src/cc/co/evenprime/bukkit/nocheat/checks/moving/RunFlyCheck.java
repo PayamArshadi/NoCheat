@@ -1,34 +1,36 @@
 package cc.co.evenprime.bukkit.nocheat.checks.moving;
 
 import org.bukkit.GameMode;
-import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 
 import cc.co.evenprime.bukkit.nocheat.NoCheat;
+import cc.co.evenprime.bukkit.nocheat.checks.CheckUtil;
 import cc.co.evenprime.bukkit.nocheat.config.Permissions;
+import cc.co.evenprime.bukkit.nocheat.config.cache.CCMoving;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
 import cc.co.evenprime.bukkit.nocheat.data.MovingData;
+import cc.co.evenprime.bukkit.nocheat.data.PreciseLocation;
+import cc.co.evenprime.bukkit.nocheat.data.SimpleLocation;
 
 /**
  * The main Check class for Move event checking. It will decide which checks
  * need to be executed and in which order. It will also precalculate some values
  * that are needed by multiple checks.
  * 
- * @author Evenprime
- * 
  */
 public class RunFlyCheck {
 
-    private final FlyingCheck       flyingCheck;
-    private final RunningCheck      runningCheck;
-    private final NoFallCheck       noFallCheck;
-    private final MorePacketsCheck  morePacketsCheck;
+    private final FlyingCheck      flyingCheck;
+    private final RunningCheck     runningCheck;
+    private final NoFallCheck      noFallCheck;
+    private final MorePacketsCheck morePacketsCheck;
 
-    private final MovingEventHelper helper;
+    private final NoCheat          plugin;
 
     public RunFlyCheck(NoCheat plugin) {
-        this.helper = new MovingEventHelper();
+        this.plugin = plugin;
 
         this.flyingCheck = new FlyingCheck(plugin);
         this.noFallCheck = new NoFallCheck(plugin);
@@ -42,7 +44,7 @@ public class RunFlyCheck {
      * @param event
      * @return
      */
-    public Location check(final Player player, final Location from, final Location to, final MovingData data, final ConfigurationCache cc) {
+    public PreciseLocation check(final Player player, final BaseData data, final ConfigurationCache cc) {
 
         // Players in vehicles are of no interest
         if(player.isInsideVehicle())
@@ -51,74 +53,76 @@ public class RunFlyCheck {
         /**
          * If not null, this will be used as the new target location
          */
-        Location newToLocation = null;
+        PreciseLocation newTo = null;
+
+        final MovingData moving = data.moving;
 
         /******** DO GENERAL DATA MODIFICATIONS ONCE FOR EACH EVENT *****/
-        if(data.horizVelocityCounter > 0) {
-            data.horizVelocityCounter--;
+        if(moving.horizVelocityCounter > 0) {
+            moving.horizVelocityCounter--;
         } else {
-            data.horizFreedom *= 0.90;
+            moving.horizFreedom *= 0.90;
         }
 
-        if(data.vertVelocityCounter > 0) {
-            data.vertVelocityCounter--;
-            data.vertFreedom += data.vertVelocity;
-            data.vertVelocity *= 0.90;
+        if(moving.vertVelocityCounter > 0) {
+            moving.vertVelocityCounter--;
+            moving.vertFreedom += moving.vertVelocity;
+            moving.vertVelocity *= 0.90;
         } else {
-            data.vertFreedom = 0;
+            moving.vertFreedom = 0;
         }
+
+        final CCMoving ccmoving = cc.moving;
 
         /************* DECIDE WHICH CHECKS NEED TO BE RUN *************/
-        final boolean runflyCheck = cc.moving.runflyCheck && !player.hasPermission(Permissions.MOVE_RUNFLY);
-        final boolean flyAllowed = cc.moving.allowFlying || player.hasPermission(Permissions.MOVE_FLY) || (player.getGameMode() == GameMode.CREATIVE && cc.moving.identifyCreativeMode);
-        final boolean morepacketsCheck = cc.moving.morePacketsCheck && !player.hasPermission(Permissions.MOVE_MOREPACKETS);
+        final boolean runflyCheck = ccmoving.runflyCheck && !player.hasPermission(Permissions.MOVE_RUNFLY);
+        final boolean flyAllowed = ccmoving.allowFlying || player.hasPermission(Permissions.MOVE_FLY);
+        final boolean morepacketsCheck = ccmoving.morePacketsCheck && !player.hasPermission(Permissions.MOVE_MOREPACKETS);
 
         /********************* EXECUTE THE FLY/JUMP/RUNNING CHECK ********************/
         // If the player is not allowed to fly and not allowed to run
         if(runflyCheck) {
             if(flyAllowed) {
-                newToLocation = flyingCheck.check(player, from, to, cc, data);
-            }
-            else {
-                newToLocation = runningCheck.check(player, from, to, helper, cc, data);
+                newTo = flyingCheck.check(player, data, cc, morepacketsCheck);
+            } else {
+                newTo = runningCheck.check(player, data, cc);
             }
         }
 
         /********* EXECUTE THE MOREPACKETS CHECK ********************/
 
-        if(newToLocation == null && morepacketsCheck) {
-            newToLocation = morePacketsCheck.check(player, cc, data);
+        if(newTo == null && morepacketsCheck) {
+            newTo = morePacketsCheck.check(player, data, cc);
         }
-        
-        return newToLocation;
+
+        return newTo;
     }
 
     /**
-     * This is a workaround for people placing blocks below them causing false positives
+     * This is a workaround for people placing blocks below them causing false
+     * positives
      * with the move check(s).
-     * 
-     * TODO: Check if still needed, maybe this got fixed in 1.8.1
-     * 
-     * @param player
-     * @param data
-     * @param blockPlaced
      */
-    public void blockPlaced(Player player, MovingData data, Block blockPlaced) {
+    public void blockPlaced(Player player, Block blockPlaced) {
 
-        if(blockPlaced == null || data.runflySetBackPoint == null) {
+        BaseData data = plugin.getData(player.getName());
+
+        if(blockPlaced == null || !data.moving.runflySetBackPoint.isSet()) {
             return;
         }
 
-        Location lblock = blockPlaced.getLocation();
-        Location lplayer = player.getLocation();
+        SimpleLocation lblock = new SimpleLocation();
+        lblock.set(blockPlaced);
+        SimpleLocation lplayer = new SimpleLocation();
+        lplayer.setLocation(player.getLocation());
 
-        if(Math.abs(lplayer.getBlockX() - lblock.getBlockX()) <= 1 && Math.abs(lplayer.getBlockZ() - lblock.getBlockZ()) <= 1 && lplayer.getBlockY() - lblock.getBlockY() >= 0 && lplayer.getBlockY() - lblock.getBlockY() <= 2) {
+        if(Math.abs(lplayer.x - lblock.x) <= 1 && Math.abs(lplayer.z - lblock.z) <= 1 && lplayer.y - lblock.y >= 0 && lplayer.y - lblock.y <= 2) {
 
-            int type = helper.types[blockPlaced.getTypeId()];
-            if(helper.isSolid(type) || helper.isLiquid(type)) {
-                if(lblock.getBlockY() + 1 >= data.runflySetBackPoint.getY()) {
-                    data.runflySetBackPoint.setY(lblock.getBlockY() + 1);
-                    data.jumpPhase = 0;
+            int type = CheckUtil.getType(blockPlaced.getTypeId());
+            if(CheckUtil.isSolid(type) || CheckUtil.isLiquid(type)) {
+                if(lblock.y + 1 >= data.moving.runflySetBackPoint.y) {
+                    data.moving.runflySetBackPoint.y = (lblock.y + 1);
+                    data.moving.jumpPhase = 0;
                 }
             }
         }

@@ -1,15 +1,18 @@
 package cc.co.evenprime.bukkit.nocheat.checks.moving;
 
-import org.bukkit.Location;
+import net.minecraft.server.EntityPlayer;
+
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 
 import cc.co.evenprime.bukkit.nocheat.NoCheat;
-import cc.co.evenprime.bukkit.nocheat.actions.ActionExecutor;
+import cc.co.evenprime.bukkit.nocheat.checks.CheckUtil;
 import cc.co.evenprime.bukkit.nocheat.config.Permissions;
+import cc.co.evenprime.bukkit.nocheat.config.cache.CCMoving;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
-import cc.co.evenprime.bukkit.nocheat.data.LogData;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
 import cc.co.evenprime.bukkit.nocheat.data.MovingData;
+import cc.co.evenprime.bukkit.nocheat.data.PreciseLocation;
 
 /**
  * The counterpart to the FlyingCheck. People that are not allowed to fly
@@ -17,92 +20,101 @@ import cc.co.evenprime.bukkit.nocheat.data.MovingData;
  * they aren't jumping too high or far, check if they aren't moving too fast on
  * normal ground, while sprinting, sneaking or swimming.
  * 
- * @author Evenprime
- * 
  */
 public class RunningCheck {
 
-    private final static double  maxBonus     = 1D;
+    private final static double maxBonus     = 1D;
 
     // How many move events can a player have in air before he is expected to
     // lose altitude (or eventually land somewhere)
-    private final static int     jumpingLimit = 6;
+    private final static int    jumpingLimit = 6;
 
-    private final ActionExecutor action;
-    private final NoCheat        plugin;
+    private final NoCheat       plugin;
 
-    private final NoFallCheck    noFallCheck;
+    private final NoFallCheck   noFallCheck;
 
     public RunningCheck(NoCheat plugin, NoFallCheck noFallCheck) {
         this.plugin = plugin;
-        this.action = new ActionExecutor(plugin);
         this.noFallCheck = noFallCheck;
     }
 
-    public Location check(final Player player, final Location from, final Location to, final MovingEventHelper helper, final ConfigurationCache cc, final MovingData data) {
+    public PreciseLocation check(final Player player, final BaseData data, final ConfigurationCache cc) {
+
+        // Some shortcuts:
+        final MovingData moving = data.moving;
+        final PreciseLocation to = moving.to;
+        final PreciseLocation from = moving.from;
+        final PreciseLocation setBack = moving.runflySetBackPoint;
+        final CCMoving ccmoving = cc.moving;
 
         // Calculate some distances
-        final double xDistance = to.getX() - from.getX();
-        final double zDistance = to.getZ() - from.getZ();
+        final double xDistance = to.x - from.x;
+        final double zDistance = to.z - from.z;
         final double horizontalDistance = Math.sqrt((xDistance * xDistance + zDistance * zDistance));
 
-        if(data.runflySetBackPoint == null) {
-            data.runflySetBackPoint = from.clone();
+        if(!setBack.isSet()) {
+            setBack.set(from);
         }
 
         // To know if a player "is on ground" is useful
-        final int fromType = helper.isLocationOnGround(from.getWorld(), from.getX(), from.getY(), from.getZ(), false);
-        final int toType = helper.isLocationOnGround(to.getWorld(), to.getX(), to.getY(), to.getZ(), false);
+        final int fromType = CheckUtil.isLocationOnGround(player.getWorld(), from);
+        final int toType = CheckUtil.isLocationOnGround(player.getWorld(), to);
 
-        final boolean fromOnGround = helper.isOnGround(fromType);
-        final boolean fromInGround = helper.isInGround(fromType);
-        final boolean toOnGround = helper.isOnGround(toType);
-        final boolean toInGround = helper.isInGround(toType);
+        final boolean fromOnGround = CheckUtil.isOnGround(fromType);
+        final boolean fromInGround = CheckUtil.isInGround(fromType);
+        final boolean toOnGround = CheckUtil.isOnGround(toType);
+        final boolean toInGround = CheckUtil.isInGround(toType);
 
-        Location newToLocation = null;
+        PreciseLocation newToLocation = null;
 
-        double resultHoriz = Math.max(0.0D, checkHorizontal(player, helper.isLiquid(fromType) && helper.isLiquid(toType), horizontalDistance, cc, data));
-        double resultVert = Math.max(0.0D, checkVertical(from, fromOnGround, to, toOnGround, cc, data));
+        final double resultHoriz = Math.max(0.0D, checkHorizontal(player, data, CheckUtil.isLiquid(fromType) && CheckUtil.isLiquid(toType), horizontalDistance, ccmoving));
+        final double resultVert = Math.max(0.0D, checkVertical(moving, fromOnGround, toOnGround, ccmoving));
 
-        double result = (resultHoriz + resultVert) * 100;
+        final double result = (resultHoriz + resultVert) * 100;
 
-        data.jumpPhase++;
+        moving.jumpPhase++;
 
         // Slowly reduce the level with each event
-        data.runflyViolationLevel *= 0.97;
+        moving.runflyViolationLevel *= 0.97;
 
         if(result > 0) {
 
             // Increment violation counter
-            data.runflyViolationLevel += result;
+            moving.runflyViolationLevel += result;
 
             // Prepare some event-specific values for logging and custom actions
-            LogData ldata = plugin.getDataManager().getLogData(player);
-            ldata.toLocation = to;
+            data.log.toLocation.set(to);
             if(resultHoriz > 0 && resultVert > 0)
-                ldata.check = "runfly/both";
-            else if(resultHoriz > 0)
-                ldata.check = "runfly/horizontal";
-            else if(resultVert > 0)
-                ldata.check = "runfly/vertical";
+                data.log.check = "runfly/both";
+            else if(resultHoriz > 0) {
+                // We already set the correct value for this
+                // data.log.check = "runfly/something"
+            } else if(resultVert > 0)
+                data.log.check = "runfly/vertical";
 
-            boolean cancel = action.executeActions(player, cc.moving.actions, (int) data.runflyViolationLevel, ldata, cc);
+            boolean cancel = plugin.execute(player, cc.moving.actions, (int) moving.runflyViolationLevel, moving.history, cc);
 
             // Was one of the actions a cancel? Then do it
             if(cancel) {
-                newToLocation = data.runflySetBackPoint;
+                newToLocation = setBack;
+            } else if(toOnGround || toInGround) {
+                // In case it only gets logged, not stopped by NoCheat
+                // Update the setback location at least a bit
+                setBack.set(to);
+                moving.jumpPhase = 0;
+
             }
         } else {
-            if((toInGround && from.getY() >= to.getY()) || helper.isLiquid(toType)) {
-                data.runflySetBackPoint = to.clone();
-                data.runflySetBackPoint.setY(Math.ceil(data.runflySetBackPoint.getY()));
-                data.jumpPhase = 0;
-            } else if(toOnGround && (from.getY() >= to.getY() || data.runflySetBackPoint.getY() <= Math.floor(to.getY()))) {
-                data.runflySetBackPoint = to.clone();
-                data.runflySetBackPoint.setY(Math.floor(data.runflySetBackPoint.getY()));
-                data.jumpPhase = 0;
+            if((toInGround && from.y >= to.y) || CheckUtil.isLiquid(toType)) {
+                setBack.set(to);
+                setBack.y = Math.ceil(setBack.y);
+                moving.jumpPhase = 0;
+            } else if(toOnGround && (from.y >= to.y || setBack.y <= Math.floor(to.y))) {
+                setBack.set(to);
+                setBack.y = Math.floor(setBack.y);
+                moving.jumpPhase = 0;
             } else if(fromOnGround || fromInGround || toOnGround || toInGround) {
-                data.jumpPhase = 0;
+                moving.jumpPhase = 0;
             }
         }
 
@@ -110,7 +122,7 @@ public class RunningCheck {
         final boolean checkNoFall = cc.moving.nofallCheck && !player.hasPermission(Permissions.MOVE_NOFALL);
 
         if(checkNoFall && newToLocation == null) {
-            noFallCheck.check(player, from, fromOnGround || fromInGround, to, toOnGround || toInGround, cc, data);
+            noFallCheck.check(player, data, fromOnGround || fromInGround, toOnGround || toInGround, cc);
         }
 
         return newToLocation;
@@ -119,60 +131,70 @@ public class RunningCheck {
     /**
      * Calculate how much the player failed this check
      * 
-     * @param isSneaking
-     * @param isSwimming
-     * @param totalDistance
-     * @param cc
-     * @param data
-     * @return
      */
-    private double checkHorizontal(final Player player, final boolean isSwimming, final double totalDistance, final ConfigurationCache cc, final MovingData data) {
+    private double checkHorizontal(final Player player, final BaseData data, final boolean isSwimming, final double totalDistance, final CCMoving ccmoving) {
 
         // How much further did the player move than expected??
         double distanceAboveLimit = 0.0D;
 
-        boolean sprinting = true;
-        try {
-            sprinting = !(player instanceof CraftPlayer) || player.isSprinting();
-        } catch(Exception e) {
-            e.printStackTrace();
-        }
+        final boolean sprinting = CheckUtil.isSprinting(player);
 
-        if(cc.moving.sneakingCheck && player.isSneaking() && !player.hasPermission(Permissions.MOVE_SNEAK)) {
-            distanceAboveLimit = totalDistance - cc.moving.sneakingSpeedLimit - data.horizFreedom;
-        } else if(cc.moving.swimmingCheck && isSwimming && !player.hasPermission(Permissions.MOVE_SWIM)) {
-            distanceAboveLimit = totalDistance - cc.moving.swimmingSpeedLimit - data.horizFreedom;
+        double limit = 0.0D;
+
+        final EntityPlayer p = ((CraftPlayer) player).getHandle();
+
+        final MovingData moving = data.moving;
+
+        if(ccmoving.sneakingCheck && player.isSneaking() && !player.hasPermission(Permissions.MOVE_SNEAK)) {
+            limit = ccmoving.sneakingSpeedLimit;
+            data.log.check = "runfly/sneak";
+        } else if(ccmoving.swimmingCheck && isSwimming && !player.hasPermission(Permissions.MOVE_SWIM)) {
+            limit = ccmoving.swimmingSpeedLimit;
+            data.log.check = "runfly/swim";
         } else if(!sprinting) {
-            distanceAboveLimit = totalDistance - cc.moving.walkingSpeedLimit - data.horizFreedom;
+            limit = ccmoving.walkingSpeedLimit;
+            data.log.check = "runfly/walk";
         } else {
-            distanceAboveLimit = totalDistance - cc.moving.sprintingSpeedLimit - data.horizFreedom;
+            limit = ccmoving.sprintingSpeedLimit;
+            data.log.check = "runfly/sprint";
         }
 
-        data.bunnyhopdelay--;
+
+        // Ignore slowdowns for now
+        /*
+         * if(p.hasEffect(MobEffectList.SLOWER_MOVEMENT)) {
+         * limit *= 1.0F - 0.15F * (float)
+         * (p.getEffect(MobEffectList.SLOWER_MOVEMENT).getAmplifier() + 1);
+         * }
+         */
+
+        distanceAboveLimit = totalDistance - limit - moving.horizFreedom;
+
+        moving.bunnyhopdelay--;
 
         // Did he go too far?
         if(distanceAboveLimit > 0 && sprinting) {
 
             // Try to treat it as a the "bunnyhop" problem
-            if(data.bunnyhopdelay <= 0 && distanceAboveLimit > 0.05D && distanceAboveLimit < 0.4D) {
-                data.bunnyhopdelay = 3;
+            if(moving.bunnyhopdelay <= 0 && distanceAboveLimit > 0.05D && distanceAboveLimit < 0.4D) {
+                moving.bunnyhopdelay = 3;
                 distanceAboveLimit = 0;
             }
         }
 
         if(distanceAboveLimit > 0) {
             // Try to consume the "buffer"
-            distanceAboveLimit -= data.horizontalBuffer;
-            data.horizontalBuffer = 0;
+            distanceAboveLimit -= moving.horizontalBuffer;
+            moving.horizontalBuffer = 0;
 
             // Put back the "overconsumed" buffer
             if(distanceAboveLimit < 0) {
-                data.horizontalBuffer = -distanceAboveLimit;
+                moving.horizontalBuffer = -distanceAboveLimit;
             }
         }
         // He was within limits, give the difference as buffer
         else {
-            data.horizontalBuffer = Math.min(maxBonus, data.horizontalBuffer - distanceAboveLimit);
+            moving.horizontalBuffer = Math.min(maxBonus, moving.horizontalBuffer - distanceAboveLimit);
         }
 
         return distanceAboveLimit;
@@ -182,19 +204,17 @@ public class RunningCheck {
      * Calculate if and how much the player "failed" this check.
      * 
      */
-    private double checkVertical(final Location from, final boolean fromOnGround, final Location to, final boolean toOnGround, final ConfigurationCache cc, final MovingData data) {
+    private double checkVertical(final MovingData moving, final boolean fromOnGround, final boolean toOnGround, final CCMoving ccmoving) {
 
         // How much higher did the player move than expected??
         double distanceAboveLimit = 0.0D;
 
-        final double toY = to.getY();
+        double limit = moving.vertFreedom + ccmoving.jumpheight;
 
-        double limit = data.vertFreedom + cc.moving.jumpheight;
-
-        if(data.jumpPhase > jumpingLimit) {
-            limit -= (data.jumpPhase - jumpingLimit) * 0.15D;
+        if(moving.jumpPhase > jumpingLimit) {
+            limit -= (moving.jumpPhase - jumpingLimit) * 0.15D;
         }
-        distanceAboveLimit = toY - data.runflySetBackPoint.getY() - limit;
+        distanceAboveLimit = moving.to.y - moving.runflySetBackPoint.y - limit;
 
         return distanceAboveLimit;
 

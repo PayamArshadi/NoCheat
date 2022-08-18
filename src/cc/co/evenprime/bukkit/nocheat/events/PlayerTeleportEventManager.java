@@ -3,9 +3,6 @@ package cc.co.evenprime.bukkit.nocheat.events;
 import java.util.Collections;
 import java.util.List;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.Event.Priority;
 import org.bukkit.event.player.PlayerListener;
@@ -17,24 +14,22 @@ import org.bukkit.plugin.PluginManager;
 
 import cc.co.evenprime.bukkit.nocheat.NoCheat;
 import cc.co.evenprime.bukkit.nocheat.config.cache.ConfigurationCache;
-import cc.co.evenprime.bukkit.nocheat.data.MovingData;
+import cc.co.evenprime.bukkit.nocheat.data.BaseData;
 
 /**
  * Only place that listens to Player-teleport related events and dispatches them
  * to relevant checks
  * 
- * @author Evenprime
- * 
  */
 public class PlayerTeleportEventManager extends PlayerListener implements EventManager {
 
     private final NoCheat plugin;
-    
+
     public PlayerTeleportEventManager(NoCheat p) {
 
         this.plugin = p;
 
-        PluginManager pm = Bukkit.getServer().getPluginManager();
+        PluginManager pm = plugin.getServer().getPluginManager();
 
         pm.registerEvent(Event.Type.PLAYER_MOVE, this, Priority.Monitor, plugin);
         pm.registerEvent(Event.Type.PLAYER_TELEPORT, this, Priority.Monitor, plugin);
@@ -48,11 +43,14 @@ public class PlayerTeleportEventManager extends PlayerListener implements EventM
 
             @Override
             public void onPlayerTeleport(PlayerTeleportEvent event) {
-                final MovingData data2 = plugin.getDataManager().getMovingData(event.getPlayer());
-                if(event.isCancelled()) {
-                    if(data2.teleportTo != null && data2.teleportTo.equals(event.getTo())) {
-                        event.setCancelled(false);
-                    }
+                if(!event.isCancelled()) {
+                    return;
+                }
+
+                final BaseData data = plugin.getData(event.getPlayer().getName());
+
+                if(data.moving.teleportTo.isSet() && data.moving.teleportTo.equals(event.getTo())) {
+                    event.setCancelled(false);
                 }
             }
         }, Priority.Highest, plugin);
@@ -60,46 +58,38 @@ public class PlayerTeleportEventManager extends PlayerListener implements EventM
 
     @Override
     public void onPlayerTeleport(PlayerTeleportEvent event) {
-        // Intentionally not check for cancelled state, may help with problems with other plugins...
-        handleTeleportation(event.getPlayer(), event.getTo());
+        if(event.isCancelled())
+            return;
+
+        handleTeleportation(event.getPlayer().getName());
     }
 
     public void onPlayerPortal(PlayerPortalEvent event) {
-        // Intentionally not check for cancelled state, may help with problems with other plugins...
-        handleTeleportation(event.getPlayer(), event.getTo());
+        if(event.isCancelled())
+            return;
+
+        handleTeleportation(event.getPlayer().getName());
     }
 
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        handleTeleportation(event.getPlayer(), event.getRespawnLocation());
+        handleTeleportation(event.getPlayer().getName());
     }
 
     // Workaround for buggy Playermove cancelling
     public void onPlayerMove(PlayerMoveEvent event) {
-        if(event.isCancelled()) {
-            handleTeleportation(event.getPlayer(), event.getFrom());
+        if(!event.isCancelled()) {
+            return;
         }
-    }
-    
-    private void handleTeleportation(Player player, Location newLocation) {
 
-        /********* Moving check ************/
-        final MovingData data = plugin.getDataManager().getMovingData(player);
-
-        data.runflySetBackPoint = null;
-        data.morePacketsCounter = 0;
-        data.morePacketsSetbackPoint = null;
-        data.jumpPhase = 0;
-        data.fallDistance = 0F;
-        data.lastAddedFallDistance = 0F;
+        handleTeleportation(event.getPlayer().getName());
     }
 
-    @Override
+    private void handleTeleportation(String playerName) {
+
+        plugin.clearCriticalData(playerName);
+    }
+
     public List<String> getActiveChecks(ConfigurationCache cc) {
-        return Collections.emptyList();
-    }
-
-    @Override
-    public List<String> getInactiveChecks(ConfigurationCache cc) {
         return Collections.emptyList();
     }
 }
